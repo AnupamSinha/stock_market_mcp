@@ -1,3 +1,6 @@
 __pycache__/
 .env
 *.log
+backtest_results.csv
+backtest_summary.json
+launchd.log
