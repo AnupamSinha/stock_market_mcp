@@ -195,12 +195,37 @@ Expected output: the 8 tool names and a ranked list with scores and recommendati
 
 ```
 stock_market_mcp/
-├── server.py           # The MCP server (FastMCP, stdio transport)
-├── requirements.txt    # mcp, yfinance
-├── .env                # Optional: ALPHA_VANTAGE_API_KEY (never committed)
+├── server.py                 # The MCP server (FastMCP, stdio transport)
+├── backtest.py               # Backtest harness for the scoring rules (5y NSE, monthly)
+├── requirements.txt          # mcp, yfinance
+├── .env                      # Optional: ALPHA_VANTAGE_API_KEY (never committed)
+├── decision_journal.json     # Journal fallback when MongoDB is down (never committed)
 ├── .gitignore
 └── README.md
 ```
+
+## Backtesting
+
+`backtest.py` replays the technical half of the scoring rules over ~5 years of
+NIFTY-100 price history, month by month, and measures forward 1/3/6/12-month
+returns by score bucket and quintile against the NIFTY 50 benchmark:
+
+```bash
+python3 backtest.py
+```
+
+Findings so far (see the script header for limitations): the technical score
+has modest short-horizon (1–3 month) ranking power; BUY and HOLD levels are
+indistinguishable at longer horizons; the SELL cutoff never triggers on the
+technical-only score. Treat the scoring weights as tunable, not settled.
+
+## Acknowledgements
+
+The multi-agent workflow shape — grounded analyst reports, bull-vs-bear
+debate, risk check, decision journal with outcome review — is inspired by
+[TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)
+(Apache-2.0), re-implemented here as a lightweight, India-focused (NSE/BSE)
+MCP server. Thanks to the TradingAgents team for open-sourcing the ideas.
 
 ## Disclaimer
 
