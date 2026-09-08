@@ -30,7 +30,10 @@ def _load_env(path=os.path.join(os.path.dirname(__file__), ".env")):
 
 _load_env()
 ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
-ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query"
+ALPHA_VANTAGE_BASE_URL = os.environ.get("ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query")
+MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
+MONGODB_DB = os.environ.get("MONGODB_DB_NAME", "stock_data")
+JOURNAL_COLLECTION = "decision_journal"
 
 mcp = FastMCP("stock_market_mcp")
 
@@ -202,6 +205,18 @@ def analyze_stock(symbol: str) -> str:
             "score": round(score, 1),
             "recommendation": _score_to_action(score),
             "reasons": reasons,
+            "data_snapshot": {
+                # every value the score above is computed from — audit trail
+                "as_of": h.index[-1].date().isoformat(),
+                "generated_at": datetime.utcnow().isoformat(),
+                "sma50": _safe(round(float(sma50), 2)) if sma50 is not None else None,
+                "sma200": _safe(round(float(sma200), 2)) if sma200 is not None else None,
+                "rsi_14": _safe(round(rsi, 1)),
+                "macd": _safe(round(float(macd.iloc[-1]), 3)),
+                "macd_signal": _safe(round(float(sig.iloc[-1]), 3)),
+                "return_6m_pct": _safe(round(ret_6m, 1)),
+                "source": "Yahoo Finance (yfinance), daily OHLC adjusted",
+            },
             "fundamentals": {
                 "pe_ratio": _safe(pe), "forward_pe": _safe(fi.get("forwardPE")),
                 "market_cap": _safe(fi.get("marketCap")),
@@ -293,6 +308,144 @@ def alpha_vantage_overview(symbol: str) -> str:
         return json.dumps({"error": "ALPHA_VANTAGE_API_KEY not set — this tool is optional; use analyze_stock instead."})
     data = _alpha_vantage("OVERVIEW", symbol)
     return json.dumps({"symbol": symbol, "data": data, "source": "Alpha Vantage API"})
+
+# ---------------------------------------------------------------- decision journal
+_JOURNAL_FALLBACK = os.path.join(os.path.dirname(__file__), "decision_journal.json")
+
+def _journal_collection():
+    """MongoDB collection for the decision journal, or None to use the JSON fallback."""
+    try:
+        import pymongo
+        client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=2000)
+        client.admin.command("ping")
+        return client[MONGODB_DB][JOURNAL_COLLECTION]
+    except Exception:
+        return None
+
+def _journal_insert(doc: dict):
+    doc = {"_ts": datetime.utcnow().isoformat(), **doc}
+    col = _journal_collection()
+    if col is not None:
+        col.insert_one(doc)
+        doc.pop("_id", None)
+    else:  # fallback: append to a local JSON file
+        docs = []
+        try:
+            with open(_JOURNAL_FALLBACK) as f:
+                docs = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        docs.append(doc)
+        with open(_JOURNAL_FALLBACK, "w") as f:
+            json.dump(docs, f, indent=2)
+    return doc
+
+def _journal_find(query: dict = None):
+    query = query or {}
+    col = _journal_collection()
+    if col is not None:
+        out = []
+        for d in col.find(query).sort("_ts", -1).limit(500):
+            d.pop("_id", None)
+            out.append(d)
+        return out
+    try:
+        with open(_JOURNAL_FALLBACK) as f:
+            docs = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    def _match(d):
+        return all(d.get(k) == v for k, v in query.items())
+    return [d for d in docs if _match(d)][::-1]
+
+@mcp.tool()
+def log_decision(symbol: str, action: str, rationale: str = "", score: float = None) -> str:
+    """Record a BUY/HOLD/SELL decision in the journal (MongoDB, JSON-file fallback) with the price at decision time."""
+    action = action.upper()
+    if action not in ("BUY", "HOLD", "SELL"):
+        return json.dumps({"error": "action must be BUY, HOLD or SELL"})
+    try:
+        price = _safe(yf.Ticker(symbol).fast_info.last_price)
+    except Exception:
+        price = None
+    doc = _journal_insert({"kind": "decision", "symbol": symbol, "action": action,
+                           "rationale": rationale, "score": score, "price_at_decision": price,
+                           "status": "open"})
+    return json.dumps({"logged": True, "decision": doc})
+
+@mcp.tool()
+def review_decisions(symbol: str = "") -> str:
+    """Review logged decisions against current prices: return since decision, whether the call was right, and a reflection prompt."""
+    query = {"kind": "decision"} | ({"symbol": symbol} if symbol else {})
+    docs = [d for d in _journal_find(query) if d.get("status") == "open"]
+    if not docs:
+        return json.dumps({"review": [], "note": "no open decisions logged yet — use log_decision"})
+    review = []
+    for d in docs[:50]:
+        entry = dict(d)
+        try:
+            now = _safe(yf.Ticker(d["symbol"]).fast_info.last_price)
+            entry["price_now"] = now
+            if now and d.get("price_at_decision"):
+                ret = (now / d["price_at_decision"] - 1) * 100
+                entry["return_since_pct"] = round(ret, 2)
+                if d["action"] == "BUY":
+                    entry["outcome"] = "CORRECT" if ret > 1 else ("WRONG" if ret < -1 else "NEUTRAL")
+                elif d["action"] == "SELL":
+                    entry["outcome"] = "CORRECT" if ret < -1 else ("WRONG" if ret > 1 else "NEUTRAL")
+                else:
+                    entry["outcome"] = "NEUTRAL" if abs(ret) <= 5 else "BROKEN (price moved >5%)"
+        except Exception as e:
+            entry["error"] = str(e)
+        review.append(entry)
+    return json.dumps({"review": review, "n_open": len(docs),
+                       "disclaimer": "Educational analysis only — not financial advice."})
+
+@mcp.tool()
+def analyst_reports(symbol: str) -> str:
+    """Three separate analyst reports for one symbol (fundamentals / technical / news sentiment), each grounded in a timestamped data snapshot — the input for a bull-vs-bear debate."""
+    # technical report
+    tech = json.loads(technical_analysis(symbol, "1y"))
+    # fundamentals report
+    t = yf.Ticker(symbol)
+    fi = t.info or {}
+    fund = {"name": fi.get("shortName", symbol), "sector": fi.get("sector", "N/A"),
+            "pe_ratio": _safe(fi.get("trailingPE")), "forward_pe": _safe(fi.get("forwardPE")),
+            "market_cap": _safe(fi.get("marketCap")),
+            "dividend_yield_pct": _safe(round(fi["dividendYield"] * 100, 2)) if fi.get("dividendYield") else None,
+            "debt_to_equity": _safe(fi.get("debtToEquity")),
+            "profit_margin_pct": _safe(round(fi["profitMargins"] * 100, 2)) if fi.get("profitMargins") else None,
+            "roe_pct": _safe(round(fi["returnOnEquity"] * 100, 2)) if fi.get("returnOnEquity") else None,
+            "target_mean_price": _safe(fi.get("targetMeanPrice"))}
+    # sentiment report: headlines only (no NLP — the client LLM judges tone)
+    news = json.loads(stock_news(symbol, 8)).get("news", [])
+    return json.dumps({
+        "symbol": symbol,
+        "reports": {
+            "fundamentals": {"data": fund, "snapshot_ts": datetime.utcnow().isoformat(), "source": "Yahoo Finance (yfinance)"},
+            "technical": {"data": tech, "snapshot_ts": datetime.utcnow().isoformat(), "source": "Yahoo Finance (yfinance)"},
+            "sentiment": {"data": {"recent_headlines": news},
+                          "note": "headlines only; judge tone from the titles",
+                          "snapshot_ts": datetime.utcnow().isoformat(), "source": "Yahoo Finance (yfinance)"},
+        },
+        "disclaimer": "Educational analysis only — not financial advice.",
+    })
+
+@mcp.prompt()
+def bull_bear_debate(symbol: str) -> str:
+    """Structured bull-vs-bear debate workflow for a stock (TradingAgents-style, India-focused)."""
+    return f"""You are conducting a structured investment debate for {symbol} (NSE/BSE). Follow these steps:
+
+1. GATHER: Call the analyst_reports tool for {symbol}. Treat every number in the reports as verified data — do not use figures from memory.
+2. BULL CASE: Argue the strongest honest case FOR the stock, citing only the snapshot data (and further tool calls if needed).
+3. BEAR CASE: Argue the strongest honest case AGAINST it, same grounding rules. Steelman both sides.
+4. RISK CHECK: List what would falsify the bull case, what would falsify the bear case, position-size and liquidity considerations for an NSE/BSE large-cap, and upcoming events (earnings, ex-dividend) that change the risk.
+5. DECISION: Give BUY/HOLD/SELL with a 0-100 score and a confidence level (low/medium/high), stating the time horizon the call is valid for.
+6. JOURNAL: Call log_decision with the final action, score, and a one-paragraph rationale.
+
+Rules: every claim must trace to the data snapshot or a fresh tool call. If data is missing, say so instead of filling gaps from memory. This is educational analysis, not financial advice — say so in the final answer."""
+
+
 
 # ---------------------------------------------------------------- main
 if __name__ == "__main__":

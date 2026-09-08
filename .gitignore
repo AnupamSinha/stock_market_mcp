@@ -4,3 +4,4 @@ __pycache__/
 backtest_results.csv
 backtest_summary.json
 launchd.log
+decision_journal.json

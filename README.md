@@ -25,6 +25,23 @@ Works for the **Indian market** (NSE/BSE) and **US market** out of the box.
 | `market_movers` | Index snapshot — India (NIFTY 50) or US (S&P 500) |
 | `stock_news` | Recent news headlines for a symbol |
 | `alpha_vantage_overview` | Optional Alpha Vantage company overview (needs API key) |
+| `log_decision` | Record a BUY/HOLD/SELL decision + rationale + price in the decision journal |
+| `review_decisions` | Review logged decisions vs current prices (return since, outcome verdict) |
+| `analyst_reports` | Three separate grounded reports (fundamentals / technical / sentiment) for one symbol |
+
+### Prompts
+
+| Prompt | What it does |
+|---|---|
+| `bull_bear_debate` | TradingAgents-style structured workflow: gather grounded reports → bull case → bear case → risk check → decision → log it. (Inspired by [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents), adapted for NSE/BSE.) |
+
+### Decision journal
+
+Every `log_decision` call is stored in **MongoDB** (`stock_data.decision_journal`, configurable via `MONGODB_URI`/`MONGODB_DB_NAME`). If MongoDB is unreachable, the journal automatically falls back to a local `decision_journal.json`. `review_decisions` closes the loop: it prices each open decision and marks the outcome CORRECT / WRONG / NEUTRAL — so recommendations are measured, not forgotten.
+
+### Grounded data snapshots
+
+`analyze_stock` and `analyst_reports` embed a timestamped `data_snapshot` — every indicator value the score is computed from, with its source. Follows the TradingAgents principle that analysis claims must trace to a verified data snapshot, never LLM memory.
 
 ### Symbol formats
 
