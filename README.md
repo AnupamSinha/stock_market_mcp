@@ -1,8 +1,12 @@
-# stock_market_mcp — Stock Analysis MCP Server
+# 🧠 stock_market_mcp
+
+> **FoodForBrains** · *Feeding your brain the data it needs to decide.*
 
 A Model Context Protocol (MCP) server that analyzes stocks and returns a scored **BUY / HOLD / SELL** assessment, so you can ask your AI client "which stocks should I look at?" and get data-backed answers.
 
 Works for the **Indian market** (NSE/BSE) and **US market** out of the box.
+
+📖 **Full documentation:** the [wiki](https://github.com/AnupamSinha/stock_market_mcp/wiki) — setup, tools reference, architecture, backtesting and FAQ.
 
 ## APIs used
 
@@ -226,6 +230,12 @@ debate, risk check, decision journal with outcome review — is inspired by
 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)
 (Apache-2.0), re-implemented here as a lightweight, India-focused (NSE/BSE)
 MCP server. Thanks to the TradingAgents team for open-sourcing the ideas.
+
+## About FoodForBrains
+
+FoodForBrains builds tools that make market information digestible — analysis
+you can actually reason about, with every number traceable to its source.
+This project is part of that mission: grounded data in, transparent reasoning out.
 
 ## Disclaimer
 
