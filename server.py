@@ -220,7 +220,7 @@ def analyze_stock(symbol: str) -> str:
             "fundamentals": {
                 "pe_ratio": _safe(pe), "forward_pe": _safe(fi.get("forwardPE")),
                 "market_cap": _safe(fi.get("marketCap")),
-                "dividend_yield_pct": _safe(round(fi["dividendYield"] * 100, 2)) if fi.get("dividendYield") else None,
+                "dividend_yield_pct": _safe(round(fi["dividendYield"], 2)) if fi.get("dividendYield") else None,
                 "debt_to_equity": _safe(debt_eq), "profit_margin_pct": _safe(round(margin * 100, 2)) if margin else None,
                 "roe_pct": _safe(round(fi["returnOnEquity"] * 100, 2)) if fi.get("returnOnEquity") else None,
             },
@@ -262,7 +262,7 @@ def compare_stocks(symbols: str) -> str:
                     "profit_margin_pct": _safe(round(fi["profitMargins"] * 100, 2)) if fi.get("profitMargins") else None,
                     "roe_pct": _safe(round(fi["returnOnEquity"] * 100, 2)) if fi.get("returnOnEquity") else None,
                     "debt_to_equity": _safe(fi.get("debtToEquity")),
-                    "dividend_yield_pct": _safe(round(fi["dividendYield"] * 100, 2)) if fi.get("dividendYield") else None,
+                    "dividend_yield_pct": _safe(round(fi["dividendYield"], 2)) if fi.get("dividendYield") else None,
                     "return_1y_pct": ret_1y})
     return json.dumps({"comparison": out, "source": "Yahoo Finance (yfinance)"})
 
@@ -412,7 +412,7 @@ def analyst_reports(symbol: str) -> str:
     fund = {"name": fi.get("shortName", symbol), "sector": fi.get("sector", "N/A"),
             "pe_ratio": _safe(fi.get("trailingPE")), "forward_pe": _safe(fi.get("forwardPE")),
             "market_cap": _safe(fi.get("marketCap")),
-            "dividend_yield_pct": _safe(round(fi["dividendYield"] * 100, 2)) if fi.get("dividendYield") else None,
+            "dividend_yield_pct": _safe(round(fi["dividendYield"], 2)) if fi.get("dividendYield") else None,
             "debt_to_equity": _safe(fi.get("debtToEquity")),
             "profit_margin_pct": _safe(round(fi["profitMargins"] * 100, 2)) if fi.get("profitMargins") else None,
             "roe_pct": _safe(round(fi["returnOnEquity"] * 100, 2)) if fi.get("returnOnEquity") else None,
