@@ -1,52 +1,194 @@
 # stock_market_mcp — Stock Analysis MCP Server
 
-An MCP server that analyzes stocks and returns a scored **BUY / HOLD / SELL** assessment so you know which stocks to consider.
+A Model Context Protocol (MCP) server that analyzes stocks and returns a scored **BUY / HOLD / SELL** assessment, so you can ask your AI client "which stocks should I look at?" and get data-backed answers.
+
+Works for the **Indian market** (NSE/BSE) and **US market** out of the box.
 
 ## APIs used
 
 | API | Purpose | Key needed? |
 |---|---|---|
-| **Yahoo Finance** (via `yfinance`) | Quotes, price history, fundamentals, news — primary data source | No (free) |
-| **Alpha Vantage** (optional) | Extra company overview data | Yes — free key at https://www.alphavantage.co/support/#api-key (5 req/min, 500/day) |
+| **Yahoo Finance** (via [`yfinance`](https://pypi.org/project/yfinance/)) | Quotes, price history, fundamentals, news — the primary data source for all analysis tools | No (free) |
+| **Alpha Vantage** (optional) | Extra company-overview data (`alpha_vantage_overview` tool) | Yes — free key at https://www.alphavantage.co/support/#api-key |
 
-Set the key via env: `ALPHA_VANTAGE_API_KEY=...` — already configured in `.env` (loaded automatically by `server.py`).
-
-> **Free-tier notes (verified live):** the free key is rate-limited to **~25 requests/day, 1 req/sec** — heavy use returns an "Information" notice instead of data. Alpha Vantage's `OVERVIEW` works for **US symbols** (AAPL ✔) but returns empty data for NSE/BSE symbols (RELIANCE.BSE ✘) — Indian-market coverage comes from Yahoo Finance, which is the primary source.
+> **Alpha Vantage free-tier notes (verified live):** the free key is rate-limited to **~25 requests/day, 1 request/sec** — exceeding it returns an "Information" notice instead of data. Also, Alpha Vantage's `OVERVIEW` endpoint works for **US symbols** (e.g. `AAPL` ✔) but returns empty data for NSE/BSE symbols (`RELIANCE.BSE` ✘) — Indian-market coverage comes entirely from Yahoo Finance, which is why Yahoo is the primary source.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
 | `get_quote` | Current price + day change for a symbol |
-| `technical_analysis` | SMA 20/50/200, RSI-14, MACD, 52w range, volatility |
-| `analyze_stock` | Full technical + fundamental scoring → BUY/HOLD/SELL with reasons |
-| `analyze_watchlist` | Analyze & rank up to 15 symbols (default: Indian NSE large caps) |
-| `compare_stocks` | Side-by-side P/E, margins, ROE, 1y return |
-| `market_movers` | Index snapshot for India (NIFTY 50) or US (S&P 500) |
-| `stock_news` | Recent headlines for a symbol |
-| `alpha_vantage_overview` | Optional Alpha Vantage company overview |
+| `technical_analysis` | SMA 20/50/200, RSI-14, MACD + signal, 52-week range, daily volatility |
+| `analyze_stock` | Full technical + fundamental analysis → 0–100 score, BUY/HOLD/SELL, with reasons |
+| `analyze_watchlist` | Analyze & rank up to 15 symbols (defaults to NSE large caps) |
+| `compare_stocks` | Side-by-side P/E, margins, ROE, debt/equity, dividend yield, 1-year return |
+| `market_movers` | Index snapshot — India (NIFTY 50) or US (S&P 500) |
+| `stock_news` | Recent news headlines for a symbol |
+| `alpha_vantage_overview` | Optional Alpha Vantage company overview (needs API key) |
 
-Symbols: NSE → `RELIANCE.NS`, BSE → `500325.BO`, US → `AAPL`.
+### Symbol formats
+
+| Market | Format | Example |
+|---|---|---|
+| NSE (India) | `<SYMBOL>.NS` | `RELIANCE.NS`, `TCS.NS` |
+| BSE (India) | `<CODE>.BO` | `500325.BO` |
+| US | plain ticker | `AAPL`, `MSFT` |
+
+## Setup
+
+### Prerequisites
+
+- **Python 3.10+** (tested on 3.13)
+- **pip**
+- An MCP client (ZCode, Claude Desktop, or any MCP-compatible client)
+- (Optional) Alpha Vantage API key
+
+### 1. Get the code
+
+```bash
+git clone https://github.com/AnupamSinha/stock_market_mcp.git
+cd stock_market_mcp
+```
+
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+This installs `mcp` (the MCP SDK) and `yfinance`.
+
+> **macOS note:** if HTTPS calls fail with an SSL certificate error, run `pip install certifi`. The server already uses `certifi` automatically when present.
+
+### 3. Configure the Alpha Vantage key (optional)
+
+Create a `.env` file in the project root (or export an env var). The server loads `.env` automatically at startup — existing environment variables take precedence:
+
+```bash
+# .env
+ALPHA_VANTAGE_API_KEY=your_key_here
+ALPHA_VANTAGE_BASE_URL=https://www.alphavantage.co/query
+```
+
+| Env var | Default | Description |
+|---|---|---|
+| `ALPHA_VANTAGE_API_KEY` | *(empty)* | Alpha Vantage key; empty disables only the `alpha_vantage_overview` tool |
+| `ALPHA_VANTAGE_BASE_URL` | `https://www.alphavantage.co/query` | Alpha Vantage endpoint |
+
+All other tools work with **no configuration at all**.
 
 ## Run
 
 ```bash
-pip install -r requirements.txt
-python server.py
+python3 server.py
 ```
 
-## MCP client config
+The server runs on **stdio** — it's not a web server; an MCP client launches it and talks to it over stdin/stdout. You normally don't run it by hand; the client config below does it for you.
+
+## Configure your MCP client
+
+### ZCode
+
+Add to `~/.zcode/cli/config.json` (user scope — available in every workspace):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "stock_market_mcp": {
+        "command": "python3",
+        "args": ["/absolute/path/to/stock_market_mcp/server.py"]
+      }
+    }
+  }
+}
+```
+
+Restart ZCode (or start a new session) — the tools appear as `mcp__stock_market_mcp__*` and connect automatically.
+
+### Claude Desktop
+
+Edit the config file:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "stock_market_mcp": {
       "command": "python3",
-      "args": ["/Users/anupamsinha/just-claude/stock_market_mcp/server.py"],
-      "env": { "ALPHA_VANTAGE_API_KEY": "your_key_here" }
+      "args": ["/absolute/path/to/stock_market_mcp/server.py"]
     }
   }
 }
 ```
 
-> **Disclaimer:** output is educational analysis, not financial advice.
+Restart Claude Desktop and start a **new conversation** — the tools icon (hammer) should show the stock tools.
+
+> Use **absolute paths** in both configs. If `python3` isn't found, use the full path (`which python3` to find it).
+
+## Verify it works
+
+Run an end-to-end test with a real MCP client handshake:
+
+```bash
+python3 - <<'EOF'
+import asyncio, json
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def main():
+    params = StdioServerParameters(command="python3", args=["server.py"])
+    async with stdio_client(params) as (r, w):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            tools = await s.list_tools()
+            print("TOOLS:", [t.name for t in tools.tools])
+            res = await s.call_tool("analyze_watchlist", {"symbols": "RELIANCE.NS,ITC.NS"})
+            print(json.loads(res.content[0].text)["ranked"])
+
+asyncio.run(main())
+EOF
+```
+
+Expected output: the 8 tool names and a ranked list with scores and recommendations.
+
+## Example prompts (once connected)
+
+- *"Analyze my watchlist and tell me which stocks to consider buying"*
+- *"Do a technical analysis of TCS.NS"*
+- *"Compare RELIANCE.NS, HDFCBANK.NS and INFY.NS"*
+- *"What's the latest news on INFY.NS?"*
+- *"Analyze AAPL and MSFT and tell me which looks better"*
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Tools don't appear in the client | Start a **new conversation/session**; check the absolute path to `server.py`; check the client's MCP logs |
+| `ModuleNotFoundError: No module named 'mcp'` / `'yfinance'` | `pip install -r requirements.txt` — make sure it's the same Python that runs `server.py` |
+| SSL / `CERTIFICATE_VERIFY_FAILED` (macOS) | `pip install certifi` (the server picks it up automatically) |
+| Alpha Vantage returns an "Information" message | Free-tier rate limit hit (~25 req/day) — wait, or rely on the Yahoo-based tools |
+| `alpha_vantage_overview` says the key isn't set | Check `.env` exists next to `server.py`, or export `ALPHA_VANTAGE_API_KEY` |
+| Empty result for an NSE symbol from `alpha_vantage_overview` | Known: Alpha Vantage no longer serves Indian fundamentals — use `analyze_stock` instead |
+| `yfinance` rate-limited / empty responses | Yahoo throttles bursts; retry after a short pause |
+
+## Project structure
+
+```
+stock_market_mcp/
+├── server.py           # The MCP server (FastMCP, stdio transport)
+├── requirements.txt    # mcp, yfinance
+├── .env                # Optional: ALPHA_VANTAGE_API_KEY (never committed)
+├── .gitignore
+└── README.md
+```
+
+## Disclaimer
+
+All output is **educational analysis generated from public market data** — it is **not financial advice**. The BUY/HOLD/SELL scores are a screening aid based on simple technical and fundamental rules; do your own research and consult a financial advisor before investing.
+
+## License
+
+MIT
