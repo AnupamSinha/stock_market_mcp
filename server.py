@@ -12,6 +12,7 @@ import math
 import os
 from datetime import datetime, timedelta
 
+import pandas as pd
 import yfinance as yf
 from mcp.server.fastmcp import FastMCP
 
@@ -536,70 +537,84 @@ def analyst_reports(symbol: str) -> str:
 
 @mcp.tool()
 def earnings_calendar(symbol: str) -> str:
-    """Upcoming earnings dates, EPS estimates, and time until earnings announcement for a symbol."""
+    """Upcoming earnings dates, EPS estimates, and time until earnings announcement for a symbol. Returns recent earnings history if no upcoming date is scheduled."""
     try:
         t = yf.Ticker(symbol)
         info = t.info or {}
-        # yfinance provides earnings dates via calendar or info
-        earnings_dates = t.earnings_dates  # returns EarningsDate objects if available
-        cal = t.calendar or {}
-        
         out = {
             "symbol": symbol,
             "source": "Yahoo Finance (yfinance)",
         }
         
-        # Next earnings date from earnings_dates (most reliable)
+        # Try earnings_dates first (most reliable for upcoming)
+        earnings_dates = t.earnings_dates
         if earnings_dates is not None:
             try:
                 df = earnings_dates
                 if not df.empty:
-                    # earnings_dates typically has 'Earnings Date' and 'EPS Estimate' columns
-                    next_earnings = df.iloc[0]  # most upcoming
-                    ed = next_earnings.get("Earnings Date")
-                    eps = next_earnings.get("EPS Estimate")
-                    out["next_earnings_date"] = ed.isoformat() if hasattr(ed, "isoformat") else str(ed) if ed else None
-                    out["eps_estimate"] = _safe(eps)
-            except Exception:
-                pass
+                    # First row is the next upcoming earnings (index contains the date)
+                    first_idx = df.index[0]
+                    next_row = df.iloc[0]
+                    eps_est = next_row.get("EPS Estimate")
+                    eps_rep = next_row.get("Reported EPS")
+                    
+                    # Date is in the index, not a column
+                    ed_str = str(first_idx)[:10]
+                    # Check if this is a future date (Reported EPS not available = upcoming)
+                    if pd.isna(eps_rep):
+                        out["next_earnings_date"] = ed_str
+                        out["eps_estimate"] = _safe(eps_est)
+                        # Calculate days until
+                        try:
+                            ed_date = first_idx.date() if hasattr(first_idx, "date") else datetime.strptime(ed_str, "%Y-%m-%d").date()
+                            now = datetime.now().date()
+                            delta = (ed_date - now).days
+                            out["days_until"] = delta
+                            out["time_until"] = f"{delta} days" if delta > 0 else "today"
+                        except Exception:
+                            pass
+                    
+                    # Recent earnings history (past quarters only)
+                    recent = []
+                    for i, (idx, row) in enumerate(df.iterrows()):
+                        if i == 0 and pd.isna(row.get("Reported EPS")):
+                            continue  # skip the upcoming one, already handled
+                        if i >= 5:  # Up to 4 past quarters
+                            break
+                        if pd.notna(row.get("Reported EPS")):
+                            recent.append({
+                                "period": str(idx)[:10],
+                                "eps_estimate": _safe(row.get("EPS Estimate")),
+                                "eps_reported": _safe(row.get("Reported EPS")),
+                                "surprise_pct": _safe(row.get("Surprise(%)"))
+                            })
+                    if recent:
+                        out["recent_earnings"] = recent
+            except Exception as e:
+                out["parse_error"] = str(e)
         
-        # Fallback to calendar from info
-        if not out.get("next_earnings_date"):
-            ed = info.get("nextEarningsDate") or info.get("earningsDate")
-            if ed:
-                out["next_earnings_date"] = ed
-        
-        # Time until earnings
-        if out.get("next_earnings_date"):
+        # Fallback: quarterly financials for EPS
+        if not out.get("recent_earnings"):
             try:
-                from dateutil import parser
-                ed = parser.isoparse(out["next_earnings_date"])
-                now = datetime.utcnow()
-                delta = ed - now
-                if delta.days > 0:
-                    out["days_until"] = delta.days
-                    out["time_until"] = f"{delta.days} days"
-                elif delta.days == 0:
-                    out["time_until"] = "today"
-                else:
-                    out["time_until"] = f"{abs(delta.days)} days ago"
-                    out["next_earnings_date"] = None  # past date
+                q = t.quarterly_financials
+                if not q.empty and "EPS Diluted" in q.index:
+                    eps_series = q.loc["EPS Diluted"].iloc[:4]
+                    out["recent_earnings"] = [
+                        {"period": str(col)[:10], "eps_reported": _safe(float(val))}
+                        for col, val in zip(eps_series.index, eps_series.values)
+                    ]
             except Exception:
                 pass
         
-        # Previous earnings for context
-        try:
-            q = t.quarterly_financials
-            if not q.empty:
-                last_eps = q.loc["EPS Diluted"].iloc[0] if "EPS Diluted" in q.index else None
-                out["last_eps"] = _safe(last_eps)
-        except Exception:
-            pass
-        
-        # Earnings guidance from info if available
+        # Guidance and fundamentals from info
+        out["eps_estimate"] = out.get("eps_estimate") or _safe(info.get("epsEstimate"))
         out["earnings_high"] = _safe(info.get("earningsHigh"))
         out["earnings_low"] = _safe(info.get("earningsLow"))
         out["revenue_growth"] = _safe(round(info.get("revenueGrowth", 0) * 100, 2)) if info.get("revenueGrowth") else None
+        
+        # Note if no upcoming date
+        if not out.get("next_earnings_date"):
+            out["note"] = "No scheduled earnings date found — check recent_earnings for last 4 quarters."
         
         return json.dumps(out)
     except Exception as e:
