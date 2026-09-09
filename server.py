@@ -134,6 +134,20 @@ def search_symbol(query: str, limit: int = 8) -> str:
                 return (1, h["symbol"])
             return (2, h["symbol"])
         hits.sort(key=rank)
+        if not hits:  # fallback: maybe the query IS a symbol — validate directly
+            q = query.strip().upper()
+            for cand in (q if "." in q else None, f"{q}.NS", f"{q}.BO"):
+                if not cand:
+                    continue
+                try:
+                    fi = yf.Ticker(cand).fast_info
+                    if _safe(fi.last_price) is not None:
+                        hits.append({"symbol": cand, "name": None,
+                                     "exchange": "NSE" if cand.endswith(".NS") else "BSE",
+                                     "type": None})
+                        break
+                except Exception:
+                    continue
         return json.dumps({"query": query, "results": hits[:limit],
                            "source": "Yahoo Finance (yfinance) Search"})
     except Exception as e:
