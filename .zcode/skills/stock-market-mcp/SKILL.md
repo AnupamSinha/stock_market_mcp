@@ -5,7 +5,7 @@ description: Analyze Indian (NSE/BSE) and US stocks via the stock_market_mcp MCP
 
 # stock-market-mcp — how to drive the server
 
-`stock_market_mcp` is an MCP server (17 tools + 1 prompt). It is a **verified-data layer**:
+`stock_market_mcp` is an MCP server (20 tools + 1 prompt). It is a **verified-data layer**:
 every number comes from Yahoo Finance, nseindia.com, or bsedata — never from your memory.
 Your job as the client LLM is reasoning, judgment, and honest reporting of the data.
 
@@ -40,6 +40,9 @@ delisted after the demerger; trust what `search_symbol` returns, not your memory
 | "How does X correlate with NIFTY/S&P?" | `correlation_analysis` |
 | "Currency impact on my NRI returns?" | `currency_impact` |
 | "Dividend dates and yield for X?" | `dividend_calendar` |
+| "Options IV, put/call ratio for X?" | `options_data` (US stocks only) |
+| "What sector is X in? Peers?" | `sector_mapping` |
+| "FII/DII flows in Indian market?" | `fii_dii_flows` |
 | "Deep-dive debate on X" | `bull_bear_debate` prompt (uses `analyst_reports`) |
 | "Record my call" / "How did our calls do?" | `log_decision` / `review_decisions` |
 
@@ -108,6 +111,30 @@ reports; state what would falsify each case.
 - **Indian stocks:** Quarterly or annual dividends (many only announce annually)
 - **US stocks:** Typically quarterly dividends with announced ex-dates
 - **Use cases:** Income investing, ex-dividend capture timing, yield comparison
+
+## Using `options_data`
+
+- **Scope:** US stocks with options chains (AAPL, MSFT, SPY, etc.)
+- **Outputs:** Implied volatility (IV), put/call ratios (volume and open interest), ATM strike prices
+- **Risk indicators:** High IV (>50%) = elevated uncertainty, Low IV (<20%) = calm market
+- **Put/Call ratio interpretation:** >1 = bearish (puts > calls), <0.7 = bullish (calls > puts)
+- **Use cases:** Earnings volatility assessment, Options strategy selection, Risk premium evaluation
+- **Note:** Indian stocks typically don't have options data via yfinance
+
+## Using `sector_mapping`
+
+- **Outputs:** Sector, industry, peer tickers, market cap, key metrics (P/E, ROE, beta)
+- **Peers:** Yahoo's curated peer list for sector comparisons
+- **Use cases:** Peer comparison ("how does INFY compare to TCS sector metrics?"), sector rotation, relative valuation
+- **Limitations:** Peer list is Yahoo-curated, may not be exhaustive
+
+## Using `fii_dii_flows`
+
+- **Scope:** Per-stock institutional holders (FII, mutual funds/DII, insider activity)
+- **Data source:** Yahoo Finance institutional holders (not market-wide FII/DII which requires paid NSE API)
+- **Outputs:** Institutional holders with shares, value, % held; mutual fund holders; insider transactions (last 6 months)
+- **Use cases:** Tracking institutional ownership changes, insider buying/selling signals, whale activity
+- **Limitations:** Market-wide FII/DII flows require paid NSE API. Per-stock data shows ownership but not daily flows.
 
 ## Gotchas
 

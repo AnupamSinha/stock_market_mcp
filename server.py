@@ -885,6 +885,214 @@ def dividend_calendar(symbol: str) -> str:
     except Exception as e:
         return json.dumps({"symbol": symbol, "error": str(e)})
 
+@mcp.tool()
+def options_data(symbol: str) -> str:
+    """Options chain data: implied volatility, put/call ratios, strike prices, expiration dates. For US stocks with options chains."""
+    try:
+        t = yf.Ticker(symbol)
+        
+        # Check if options exist
+        if not t.options:
+            return json.dumps({"symbol": symbol, "error": "No options data available — symbol may not have options"})
+        
+        # Get first expiration's chain (default behavior)
+        opt = t.option_chain(t.options[0])
+        
+        calls = opt.calls
+        puts = opt.puts
+        
+        # Basic metrics
+        out = {"symbol": symbol, "source": "Yahoo Finance (yfinance)"}
+        
+        # Current stock price
+        try:
+            out["current_price"] = _safe(round(float(t.fast_info.last_price), 2))
+        except Exception:
+            pass
+        
+        # Expiration dates
+        out["expiration_dates"] = [str(d)[:10] for d in t.options] if t.options else []
+        
+        if not calls.empty:
+            # IV - weighted average from near-the-money calls
+            atm_mask = (calls["strike"] >= out.get("current_price", 0) * 0.95) & (calls["strike"] <= out.get("current_price", float('inf')) * 1.05)
+            atm_calls = calls[atm_mask]
+            if not atm_calls.empty:
+                out["implied_volatility_call"] = _safe(round(atm_calls["impliedVolatility"].mean() * 100, 2))
+            else:
+                out["implied_volatility_call"] = _safe(round(calls["impliedVolatility"].mean() * 100, 2))
+        
+        if not puts.empty:
+            # IV from puts
+            atm_mask = (puts["strike"] >= out.get("current_price", 0) * 0.95) & (puts["strike"] <= out.get("current_price", float('inf')) * 1.05)
+            atm_puts = puts[atm_mask]
+            if not atm_puts.empty:
+                out["implied_volatility_put"] = _safe(round(atm_puts["impliedVolatility"].mean() * 100, 2))
+            else:
+                out["implied_volatility_put"] = _safe(round(puts["impliedVolatility"].mean() * 100, 2))
+        
+        # Put/Call ratio (volume or open interest)
+        if not calls.empty and not puts.empty:
+            call_vol = calls["volume"].sum()
+            put_vol = puts["volume"].sum()
+            call_oi = calls["openInterest"].sum()
+            put_oi = puts["openInterest"].sum()
+            
+            out["put_call_volume_ratio"] = _safe(round(put_vol / call_vol, 3)) if call_vol > 0 else None
+            out["put_call_oi_ratio"] = _safe(round(put_oi / call_oi, 3)) if call_oi > 0 else None
+            
+            # Interpretation
+            if out.get("put_call_oi_ratio") and out["put_call_oi_ratio"] > 1:
+                out["sentiment"] = "bearish (high put demand)"
+            elif out.get("put_call_oi_ratio") and out["put_call_oi_ratio"] < 0.7:
+                out["sentiment"] = "bullish (high call demand)"
+            else:
+                out["sentiment"] = "neutral"
+        
+        # Near-the-money options (useful for quick view)
+        if not calls.empty and not puts.empty:
+            price = out.get("current_price", 0)
+            if price:
+                call_strikes = calls[(calls["strike"] >= price * 0.95) & (calls["strike"] <= price * 1.05)]
+                put_strikes = puts[(puts["strike"] >= price * 0.95) & (puts["strike"] <= price * 1.05)]
+                
+                out["atm_calls"] = [{"strike": _safe(row["strike"]), "bid": _safe(row["bid"]), "ask": _safe(row["ask"]), "iv": _safe(round(row["impliedVolatility"] * 100, 2))}
+                                   for _, row in call_strikes.head(3).iterrows()]
+                out["atm_puts"] = [{"strike": _safe(row["strike"]), "bid": _safe(row["bid"]), "ask": _safe(row["ask"]), "iv": _safe(round(row["impliedVolatility"] * 100, 2))}
+                                  for _, row in put_strikes.head(3).iterrows()]
+        
+        # Risk assessment
+        if out.get("implied_volatility_call"):
+            if out["implied_volatility_call"] > 50:
+                out["iv_percentile"] = "high"
+                out["risk_note"] = "Options pricing suggests elevated uncertainty"
+            elif out["implied_volatility_call"] < 20:
+                out["iv_percentile"] = "low"
+                out["risk_note"] = "Options pricing suggests calm market"
+            else:
+                out["iv_percentile"] = "moderate"
+        
+        return json.dumps(out)
+    except Exception as e:
+        return json.dumps({"symbol": symbol, "error": str(e)})
+
+@mcp.tool()
+def sector_mapping(symbol: str) -> str:
+    """Get sector, industry, and peer tickers for a stock. Useful for peer comparison and sector analysis."""
+    try:
+        t = yf.Ticker(symbol)
+        info = t.info or {}
+        
+        out = {
+            "symbol": symbol,
+            "source": "Yahoo Finance (yfinance)"
+        }
+        
+        # Sector and industry
+        out["sector"] = info.get("sector")
+        out["industry"] = info.get("industry")
+        out["industry_key"] = info.get("industryKey")
+        
+        # Company info
+        out["name"] = info.get("shortName")
+        out["full_time_employees"] = info.get("fullTimeEmployees")
+        out["business_summary"] = info.get("businessSummary", "")[:500] if info.get("businessSummary") else None
+        
+        # Peer tickers (Yahoo provides a peer list)
+        out["peers"] = info.get("peers") or []
+        
+        # Market data
+        out["market_cap"] = _safe(info.get("marketCap"))
+        out["exchange"] = info.get("exchange")
+        out["quote_type"] = info.get("quoteType")
+        
+        # Key metrics for sector context
+        out["trailing_pe"] = _safe(info.get("trailingPE"))
+        out["forward_pe"] = _safe(info.get("forwardPE"))
+        out["profit_margin"] = _safe(round(info.get("profitMargins", 0) * 100, 2)) if info.get("profitMargins") else None
+        out["roe"] = _safe(round(info.get("returnOnEquity", 0) * 100, 2)) if info.get("returnOnEquity") else None
+        out["beta"] = _safe(info.get("beta"))
+        
+        return json.dumps(out)
+    except Exception as e:
+        return json.dumps({"symbol": symbol, "error": str(e)})
+
+@mcp.tool()
+def fii_dii_flows(symbol: str = "", period: str = "1m") -> str:
+    """India: Institutional holder data for stocks. Returns institutional ownership, recent changes for FII (Foreign Institutional Investors) and DII (Domestic Institutional Investors). For Indian stocks via yfinance institutional holders."""
+    try:
+        t = yf.Ticker(symbol) if symbol else None
+        out = {
+            "period": period,
+            "source": "Yahoo Finance (yfinance)"
+        }
+        
+        if symbol:
+            # Per-stock institutional holders
+            holders = t.institutional_holders if hasattr(t, 'institutional_holders') else None
+            
+            if holders is not None and not holders.empty:
+                out["institutional_holders"] = [
+                    {
+                        "holder": row.get("Holder", str(row.get("name", ""))),
+                        "shares": _safe(row.get("Shares")),
+                        "value": _safe(row.get("Value")),
+                        "pct_held": _safe(round(row.get("pctOfShares", 0) * 100, 2)) if row.get("pctOfShares") else None,
+                        "change_pct": _safe(round(row.get("Change", 0) * 100, 2)) if row.get("Change") else None
+                    }
+                    for _, row in holders.iterrows()
+                ]
+            
+            # Mutual fund holders (DII proxy for India)
+            mfh = t.mutualfund_holders if hasattr(t, 'mutualfund_holders') else None
+            if mfh is not None and not mfh.empty:
+                out["mutual_fund_holders"] = [
+                    {
+                        "holder": row.get("Holder", str(row.get("name", ""))),
+                        "shares": _safe(row.get("Shares")),
+                        "value": _safe(row.get("Value")),
+                        "pct_held": _safe(round(row.get("pctOfShares", 0) * 100, 2)) if row.get("pctOfShares") else None,
+                    }
+                    for _, row in mfh.head(10).iterrows()
+                ]
+            
+            # Insider transactions
+            insider = t.insider_transactions if hasattr(t, 'insider_transactions') else None
+            if insider is not None and not insider.empty:
+                try:
+                    recent = insider[insider["Date"] > (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")]
+                    out["insider_activity"] = [
+                        {
+                            "date": str(row.get("Date"))[:10] if row.get("Date") else None,
+                            "type": row.get("Transaction"),
+                            "shares": _safe(row.get("Shares")),
+                            "value": _safe(row.get("Value")),
+                        }
+                        for _, row in recent.head(5).iterrows()
+                    ]
+                except Exception:
+                    # Fallback: just take last 5 transactions
+                    out["insider_activity"] = [
+                        {
+                            "date": str(row.get("Date"))[:10] if row.get("Date") else None,
+                            "type": row.get("Transaction"),
+                            "shares": _safe(row.get("Shares")),
+                            "value": _safe(row.get("Value")),
+                        }
+                        for _, row in insider.head(5).iterrows()
+                    ]
+            
+            if not out.get("institutional_holders"):
+                out["note"] = "Limited institutional holder data available for this symbol"
+        else:
+            # Market-level: Note about FII/DII
+            out["note"] = "Market-wide FII/DII flows require paid NSE API. For stock-specific institutional holders, provide a symbol."
+            out["alternative"] = "Use sector_mapping + compare_stocks for sector-level analysis"
+        
+        return json.dumps(out)
+    except Exception as e:
+        return json.dumps({"symbol": symbol, "error": str(e)})
+
 
 @mcp.prompt()
 def bull_bear_debate(symbol: str) -> str:
