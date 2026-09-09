@@ -13,6 +13,7 @@ Works for the **Indian market** (NSE/BSE) and **US market** out of the box.
 | API | Purpose | Key needed? |
 |---|---|---|
 | **Yahoo Finance** (via [`yfinance`](https://pypi.org/project/yfinance/)) | Quotes, price history, fundamentals, news — the primary data source for all analysis tools | No (free) |
+| **bsedata** | BSE top gainers/losers in `market_movers` | No (scrapes bseindia.com; 10-min TTL cache, graceful fallback if BSE blocks) |
 | **Alpha Vantage** (optional) | Extra company-overview data (`alpha_vantage_overview` tool) | Yes — free key at https://www.alphavantage.co/support/#api-key |
 
 > **Alpha Vantage free-tier notes (verified live):** the free key is rate-limited to **~25 requests/day, 1 request/sec** — exceeding it returns an "Information" notice instead of data. Also, Alpha Vantage's `OVERVIEW` endpoint works for **US symbols** (e.g. `AAPL` ✔) but returns empty data for NSE/BSE symbols (`RELIANCE.BSE` ✘) — Indian-market coverage comes entirely from Yahoo Finance, which is why Yahoo is the primary source.
@@ -27,7 +28,7 @@ Works for the **Indian market** (NSE/BSE) and **US market** out of the box.
 | `analyze_stock` | Full technical + fundamental analysis → 0–100 score, BUY/HOLD/SELL, with reasons |
 | `analyze_watchlist` | Analyze & rank up to 15 symbols (defaults to NSE large caps) |
 | `compare_stocks` | Side-by-side P/E, margins, ROE, debt/equity, dividend yield, 1-year return |
-| `market_movers` | Index snapshot — India (NIFTY 50) or US (S&P 500) |
+| `market_movers` | Index + **real top gainers/losers**: BSE movers via `bsedata` (10-min cache), NIFTY/S&P index via Yahoo |
 | `stock_news` | Recent news headlines for a symbol |
 | `alpha_vantage_overview` | Optional Alpha Vantage company overview (needs API key) |
 | `log_decision` | Record a BUY/HOLD/SELL decision + rationale + price in the decision journal |

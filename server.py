@@ -296,25 +296,50 @@ def compare_stocks(symbols: str) -> str:
                     "return_1y_pct": ret_1y})
     return json.dumps({"comparison": out, "source": "Yahoo Finance (yfinance)"})
 
+# ---------------------------------------------------------------- movers cache
+_MOVERS_CACHE = {"ts": 0.0, "data": None}
+_MOVERS_TTL = 600  # seconds — bsedata scrapes BSE pages; cache hard to stay polite
+
+def _bse_movers():
+    """Top BSE gainers/losers via bsedata with a TTL cache. Raises on failure."""
+    import time as _time
+    now = _time.time()
+    if _MOVERS_CACHE["data"] is not None and now - _MOVERS_CACHE["ts"] < _MOVERS_TTL:
+        return {**_MOVERS_CACHE["data"], "cached": True}
+    from bsedata.bse import BSE
+    b = BSE()
+    def _rows(rows):
+        return [{"symbol": f"{r['scripCode']}.BO", "company": r.get("securityID"),
+                 "price": _safe(r.get("LTP")), "change_pct": _safe(r.get("pChange"))}
+                for r in rows[:5]]
+    data = {"gainers": _rows(b.topGainers()), "losers": _rows(b.topLosers()),
+            "cached": False}
+    _MOVERS_CACHE.update(ts=now, data=data)
+    return data
+
 @mcp.tool()
 def market_movers(market: str = "india") -> str:
-    """Top gainers/losers/active for a market. market: 'india' (NSE) or 'us'."""
+    """Market snapshot + top movers. market: 'india' (BSE top gainers/losers via bsedata, NIFTY index via Yahoo) or 'us' (S&P 500 index)."""
     index_symbol = "^NSEI" if market.lower() == "india" else "^GSPC"
+    index_name = "NIFTY 50" if market.lower() == "india" else "S&P 500"
+    out = {"market": market, "index": index_name,
+           "source": "Yahoo Finance (yfinance)"}
     try:
-        idx = yf.Ticker(index_symbol)
-        info = idx.info or {}
-        constituents_hint = "See index page for constituents; pass them to analyze_watchlist."
-        hist = idx.history(period="5d")
-        return json.dumps({
-            "market": market,
-            "index": "NIFTY 50" if market.lower() == "india" else "S&P 500",
-            "index_level": _safe(round(float(hist["Close"].iloc[-1]), 2)) if not hist.empty else None,
-            "hint": constituents_hint,
-            "suggested_workflow": "run analyze_watchlist on your candidate symbols",
-            "source": "Yahoo Finance (yfinance)",
-        })
+        hist = yf.Ticker(index_symbol).history(period="5d")
+        out["index_level"] = _safe(round(float(hist["Close"].iloc[-1]), 2)) if not hist.empty else None
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        out["index_error"] = str(e)
+    if market.lower() == "india":
+        try:
+            out["bse_movers"] = _bse_movers()
+            out["movers_source"] = "bsedata (scrapes bseindia.com, 10-min cache)"
+        except Exception as e:
+            out["bse_movers"] = None
+            out["bse_movers_error"] = str(e)
+            out["note"] = "BSE movers unavailable — pass candidate symbols to analyze_watchlist instead."
+    else:
+        out["suggested_workflow"] = "run analyze_watchlist on your candidate symbols"
+    return json.dumps(out)
 
 @mcp.tool()
 def stock_news(symbol: str, limit: int = 5) -> str:
