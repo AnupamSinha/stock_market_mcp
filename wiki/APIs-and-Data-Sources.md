@@ -4,6 +4,7 @@
 |---|---|---|---|
 | **Yahoo Finance** (`yfinance`) | primary: quotes, history, fundamentals, news | none | free; bursts can throttle — retry after a pause |
 | **Alpha Vantage** | optional `alpha_vantage_overview` | `ALPHA_VANTAGE_API_KEY` in `.env` | free tier ~25 req/day, 1 req/sec; **NSE/BSE symbols return empty data** — US symbols only (verified live) |
+| **nseindia.com public API** | NSE top gainers/losers for `market_movers` | none | unofficial; NSE can block — 10-min TTL cache, graceful fallback; note: NSE's losers endpoint is spelled `loosers` (their typo) |
 | **bsedata** | BSE top gainers/losers for `market_movers` | none | scrapes bseindia.com — 10-min TTL cache, graceful fallback; BSE warns heavy scraping risks IP blocks |
 | **MongoDB** | decision journal | none (local) | `MONGODB_URI` / `MONGODB_DB_NAME` env vars; auto JSON-file fallback |
 

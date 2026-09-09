@@ -298,6 +298,7 @@ def compare_stocks(symbols: str) -> str:
 
 # ---------------------------------------------------------------- movers cache
 _MOVERS_CACHE = {"ts": 0.0, "data": None}
+_NSE_MOVERS_CACHE = {"ts": 0.0, "data": None}
 _MOVERS_TTL = 600  # seconds — bsedata scrapes BSE pages; cache hard to stay polite
 
 def _bse_movers():
@@ -317,6 +318,32 @@ def _bse_movers():
     _MOVERS_CACHE.update(ts=now, data=data)
     return data
 
+def _nse_movers():
+    """Top NSE gainers/losers from nseindia.com's public endpoint with a TTL cache. Raises on failure."""
+    import time as _time
+    import requests
+    now = _time.time()
+    if _NSE_MOVERS_CACHE["data"] is not None and now - _NSE_MOVERS_CACHE["ts"] < _MOVERS_TTL:
+        return {**_NSE_MOVERS_CACHE["data"], "cached": True}
+    s = requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                      "Accept": "*/*", "Referer": "https://www.nseindia.com/"})
+    s.get("https://www.nseindia.com", timeout=10)  # cookie bootstrap
+    def _rows(url):
+        d = s.get(url, timeout=10).json()
+        rows = d.get("NIFTY", {}).get("data") if isinstance(d.get("NIFTY"), dict) else None
+        if rows is None:  # losers endpoint nests differently: top-level "data"
+            rows = d.get("data", [])
+        return [{"symbol": f"{r['symbol']}.NS", "company": r.get("symbol"),
+                 "price": _safe(r.get("ltp")), "change_pct": _safe(r.get("perChange"))}
+                for r in rows[:5]]
+    data = {"gainers": _rows("https://www.nseindia.com/api/live-analysis-variations?index=gainers"),
+            # yes, "loosers" — NSE's own typo, the correct spelling returns an error
+            "losers": _rows("https://www.nseindia.com/api/live-analysis-variations?index=loosers"),
+            "cached": False}
+    _NSE_MOVERS_CACHE.update(ts=now, data=data)
+    return data
+
 @mcp.tool()
 def market_movers(market: str = "india") -> str:
     """Market snapshot + top movers. market: 'india' (BSE top gainers/losers via bsedata, NIFTY index via Yahoo) or 'us' (S&P 500 index)."""
@@ -331,8 +358,15 @@ def market_movers(market: str = "india") -> str:
         out["index_error"] = str(e)
     if market.lower() == "india":
         try:
+            out["nse_movers"] = _nse_movers()
+            out["movers_source"] = "nseindia.com public API + bsedata (10-min caches)"
+        except Exception as e:
+            out["nse_movers"] = None
+            out["nse_movers_error"] = str(e)
+        try:
             out["bse_movers"] = _bse_movers()
-            out["movers_source"] = "bsedata (scrapes bseindia.com, 10-min cache)"
+            if "movers_source" not in out:
+                out["movers_source"] = "bsedata (scrapes bseindia.com, 10-min cache)"
         except Exception as e:
             out["bse_movers"] = None
             out["bse_movers_error"] = str(e)
