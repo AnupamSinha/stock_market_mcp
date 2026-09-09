@@ -5,7 +5,7 @@ description: Analyze Indian (NSE/BSE) and US stocks via the stock_market_mcp MCP
 
 # stock-market-mcp — how to drive the server
 
-`stock_market_mcp` is an MCP server (12 tools + 1 prompt). It is a **verified-data layer**:
+`stock_market_mcp` is an MCP server (13 tools + 1 prompt). It is a **verified-data layer**:
 every number comes from Yahoo Finance, nseindia.com, or bsedata — never from your memory.
 Your job as the client LLM is reasoning, judgment, and honest reporting of the data.
 
@@ -35,6 +35,7 @@ delisted after the demerger; trust what `search_symbol` returns, not your memory
 | "Which of these stocks looks best?" | `analyze_watchlist` (ranks by score) or `compare_stocks` (fundamentals side-by-side) |
 | "What's moving in the market?" | `market_movers` (NSE + BSE gainers/losers + NIFTY) |
 | "Any news on X?" | `stock_news` |
+| "When does X report earnings?" / "EPS estimate for X" | `earnings_calendar` |
 | "Deep-dive debate on X" | `bull_bear_debate` prompt (uses `analyst_reports`) |
 | "Record my call" / "How did our calls do?" | `log_decision` / `review_decisions` |
 
@@ -64,6 +65,14 @@ reports; state what would falsify each case.
 - When the user asks "how are we doing", call `review_decisions` — it grades every open
   call CORRECT / WRONG / NEUTRAL against current prices. Report failures honestly; never
   delete journal history.
+
+## Using `earnings_calendar`
+
+- **Upcoming earnings:** Returns the next earnings date, days until, and analyst EPS estimate.
+- **Recent history:** Shows last 4 quarters with EPS estimates, reported EPS, and surprise %.
+- **Use cases:** Risk assessment in debates ("earnings in 14 days — last beat was +12%, watch for volatility"), valuation timing, catalyst awareness.
+- **Indian stocks:** Often don't publish scheduled dates in advance — returns recent history with surprise % instead.
+- **US stocks:** Typically have scheduled dates (e.g., AAPL Oct 29, MSFT ~last week of month).
 
 ## Gotchas
 
