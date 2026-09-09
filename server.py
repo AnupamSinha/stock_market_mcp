@@ -534,6 +534,78 @@ def analyst_reports(symbol: str) -> str:
         "disclaimer": "Educational analysis only — not financial advice.",
     })
 
+@mcp.tool()
+def earnings_calendar(symbol: str) -> str:
+    """Upcoming earnings dates, EPS estimates, and time until earnings announcement for a symbol."""
+    try:
+        t = yf.Ticker(symbol)
+        info = t.info or {}
+        # yfinance provides earnings dates via calendar or info
+        earnings_dates = t.earnings_dates  # returns EarningsDate objects if available
+        cal = t.calendar or {}
+        
+        out = {
+            "symbol": symbol,
+            "source": "Yahoo Finance (yfinance)",
+        }
+        
+        # Next earnings date from earnings_dates (most reliable)
+        if earnings_dates is not None:
+            try:
+                df = earnings_dates
+                if not df.empty:
+                    # earnings_dates typically has 'Earnings Date' and 'EPS Estimate' columns
+                    next_earnings = df.iloc[0]  # most upcoming
+                    ed = next_earnings.get("Earnings Date")
+                    eps = next_earnings.get("EPS Estimate")
+                    out["next_earnings_date"] = ed.isoformat() if hasattr(ed, "isoformat") else str(ed) if ed else None
+                    out["eps_estimate"] = _safe(eps)
+            except Exception:
+                pass
+        
+        # Fallback to calendar from info
+        if not out.get("next_earnings_date"):
+            ed = info.get("nextEarningsDate") or info.get("earningsDate")
+            if ed:
+                out["next_earnings_date"] = ed
+        
+        # Time until earnings
+        if out.get("next_earnings_date"):
+            try:
+                from dateutil import parser
+                ed = parser.isoparse(out["next_earnings_date"])
+                now = datetime.utcnow()
+                delta = ed - now
+                if delta.days > 0:
+                    out["days_until"] = delta.days
+                    out["time_until"] = f"{delta.days} days"
+                elif delta.days == 0:
+                    out["time_until"] = "today"
+                else:
+                    out["time_until"] = f"{abs(delta.days)} days ago"
+                    out["next_earnings_date"] = None  # past date
+            except Exception:
+                pass
+        
+        # Previous earnings for context
+        try:
+            q = t.quarterly_financials
+            if not q.empty:
+                last_eps = q.loc["EPS Diluted"].iloc[0] if "EPS Diluted" in q.index else None
+                out["last_eps"] = _safe(last_eps)
+        except Exception:
+            pass
+        
+        # Earnings guidance from info if available
+        out["earnings_high"] = _safe(info.get("earningsHigh"))
+        out["earnings_low"] = _safe(info.get("earningsLow"))
+        out["revenue_growth"] = _safe(round(info.get("revenueGrowth", 0) * 100, 2)) if info.get("revenueGrowth") else None
+        
+        return json.dumps(out)
+    except Exception as e:
+        return json.dumps({"symbol": symbol, "error": str(e)})
+
+
 @mcp.prompt()
 def bull_bear_debate(symbol: str) -> str:
     """Structured bull-vs-bear debate workflow for a stock (TradingAgents-style, India-focused)."""
