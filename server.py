@@ -110,6 +110,36 @@ def get_quote(symbol: str) -> str:
     return json.dumps({"symbol": symbol, **info, "source": "Yahoo Finance (yfinance)"})
 
 @mcp.tool()
+def search_symbol(query: str, limit: int = 8) -> str:
+    """Resolve a company name or partial symbol to tradeable symbols (e.g. 'reliance' -> RELIANCE.NS). India-first: NSE (.NS) results are ranked before BSE (.BO) and others."""
+    try:
+        from yfinance import Search
+        s = Search(query, max_results=25)
+        hits = []
+        for r in (s.quotes or []):
+            sym = r.get("symbol", "")
+            if not sym:
+                continue
+            hits.append({
+                "symbol": sym,
+                "name": r.get("shortname") or r.get("longname") or r.get("displayname"),
+                "exchange": r.get("exchDisp") or r.get("exchange"),
+                "type": r.get("quoteType"),
+            })
+        # India-first ranking: NSE before BSE before the rest
+        def rank(h):
+            if h["symbol"].endswith(".NS"):
+                return (0, h["symbol"])
+            if h["symbol"].endswith(".BO"):
+                return (1, h["symbol"])
+            return (2, h["symbol"])
+        hits.sort(key=rank)
+        return json.dumps({"query": query, "results": hits[:limit],
+                           "source": "Yahoo Finance (yfinance) Search"})
+    except Exception as e:
+        return json.dumps({"query": query, "error": str(e)})
+
+@mcp.tool()
 def technical_analysis(symbol: str, period: str = "6mo") -> str:
     """Technical indicators (SMA 20/50/200, RSI-14, MACD, 52w high/low, volatility) for a symbol."""
     try:

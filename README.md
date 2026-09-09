@@ -22,6 +22,7 @@ Works for the **Indian market** (NSE/BSE) and **US market** out of the box.
 | Tool | What it does |
 |---|---|
 | `get_quote` | Current price + day change for a symbol |
+| `search_symbol` | Resolve a company name to symbols (e.g. "reliance" → RELIANCE.NS); India-first ranking |
 | `technical_analysis` | SMA 20/50/200, RSI-14, MACD + signal, 52-week range, daily volatility |
 | `analyze_stock` | Full technical + fundamental analysis → 0–100 score, BUY/HOLD/SELL, with reasons |
 | `analyze_watchlist` | Analyze & rank up to 15 symbols (defaults to NSE large caps) |

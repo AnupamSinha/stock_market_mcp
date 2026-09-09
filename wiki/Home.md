@@ -19,7 +19,7 @@ Full walkthrough: [[Setup-and-Installation]]
 | Page | Contents |
 |---|---|
 | [[Setup-and-Installation]] | Prerequisites, install, client configuration (ZCode / Claude Desktop) |
-| [[Tools-Reference]] | All 11 tools + 1 prompt, parameters, scoring model |
+| [[Tools-Reference]] | All 12 tools + 1 prompt, parameters, scoring model |
 | [[Architecture]] | How the server is built; data flow; design decisions |
 | [[APIs-and-Data-Sources]] | Yahoo Finance, Alpha Vantage, MongoDB — limits and gotchas |
 | [[Decision-Journal]] | Logging decisions, reviewing outcomes, JSON fallback |
@@ -30,7 +30,7 @@ Full walkthrough: [[Setup-and-Installation]]
 
 ## What it gives you
 
-- **11 tools + 1 prompt** — quotes, technicals (SMA/RSI/MACD), full scored analysis with auditable data snapshots, watchlist ranking, comparisons, news, and a TradingAgents-style bull/bear debate workflow
+- **12 tools + 1 prompt** — quotes, technicals (SMA/RSI/MACD), full scored analysis with auditable data snapshots, watchlist ranking, comparisons, news, and a TradingAgents-style bull/bear debate workflow
 - **Decision journal** — every recommendation logged and later graded CORRECT/WRONG against real prices
 - **Backtest harness** — the scoring rules replayed over 5 years of NSE history, honestly reported
 - **Zero mandatory API keys** — Yahoo Finance powers everything; Alpha Vantage is optional

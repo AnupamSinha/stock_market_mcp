@@ -1,6 +1,6 @@
 # Tools Reference
 
-11 tools + 1 prompt. All analysis defaults to the Indian market (NSE `.NS` / BSE `.BO`); US tickers also work.
+12 tools + 1 prompt. All analysis defaults to the Indian market (NSE `.NS` / BSE `.BO`); US tickers also work.
 
 ## Symbol formats
 
@@ -14,6 +14,12 @@
 
 ### `get_quote(symbol)`
 Current price, previous close, day change %.
+
+### `search_symbol(query, limit=8)`
+Resolve a company name or partial symbol to tradeable symbols — "reliance" → RELIANCE.NS,
+"tata consultancy" → TCS.NS. India-first ranking (NSE `.NS` before BSE `.BO` before others).
+Idea credited to 0xramm/Indian-Stock-Market-API, implemented locally over Yahoo's own
+search so there's no third-party dependency.
 
 ### `technical_analysis(symbol, period="6mo")`
 SMA 20/50/200, RSI-14, MACD + signal + trend, 52-week high/low, daily volatility.
