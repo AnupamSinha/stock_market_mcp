@@ -5,7 +5,7 @@ description: Analyze Indian (NSE/BSE) and US stocks via the stock_market_mcp MCP
 
 # stock-market-mcp — how to drive the server
 
-`stock_market_mcp` is an MCP server (13 tools + 1 prompt). It is a **verified-data layer**:
+`stock_market_mcp` is an MCP server (17 tools + 1 prompt). It is a **verified-data layer**:
 every number comes from Yahoo Finance, nseindia.com, or bsedata — never from your memory.
 Your job as the client LLM is reasoning, judgment, and honest reporting of the data.
 
@@ -33,9 +33,13 @@ delisted after the demerger; trust what `search_symbol` returns, not your memory
 | "Technical view on X" | `technical_analysis` |
 | "Should I buy/sell X?" / "Analyze X" | `analyze_stock`, or the full `bull_bear_debate` prompt |
 | "Which of these stocks looks best?" | `analyze_watchlist` (ranks by score) or `compare_stocks` (fundamentals side-by-side) |
+| "Screen stocks by P/E, RSI, dividend yield" | `stock_screener` |
 | "What's moving in the market?" | `market_movers` (NSE + BSE gainers/losers + NIFTY) |
 | "Any news on X?" | `stock_news` |
 | "When does X report earnings?" / "EPS estimate for X" | `earnings_calendar` |
+| "How does X correlate with NIFTY/S&P?" | `correlation_analysis` |
+| "Currency impact on my NRI returns?" | `currency_impact` |
+| "Dividend dates and yield for X?" | `dividend_calendar` |
 | "Deep-dive debate on X" | `bull_bear_debate` prompt (uses `analyst_reports`) |
 | "Record my call" / "How did our calls do?" | `log_decision` / `review_decisions` |
 
@@ -73,6 +77,37 @@ reports; state what would falsify each case.
 - **Use cases:** Risk assessment in debates ("earnings in 14 days — last beat was +12%, watch for volatility"), valuation timing, catalyst awareness.
 - **Indian stocks:** Often don't publish scheduled dates in advance — returns recent history with surprise % instead.
 - **US stocks:** Typically have scheduled dates (e.g., AAPL Oct 29, MSFT ~last week of month).
+
+## Using `stock_screener`
+
+- **Filters:** `min_pe`, `max_pe`, `min_rsi`, `max_rsi`, `min_dividend_yield`, `min_roe`, `min_score`
+- **Input:** Comma-separated symbols (default: default watchlist RELIANCE, TCS, INFY, HDFCBANK, ITC, SBIN)
+- **Output:** Matching stocks with P/E, RSI, dividend yield, ROE, and analyze_stock score
+- **Example:** `stock_screener("", min_pe=10, max_pe=25, min_rsi=40, max_rsi=70)` → stocks with P/E 10-25 and RSI 40-70
+- **Use cases:** Finding oversold value stocks, high-dividend payers, momentum stocks
+
+## Using `correlation_analysis`
+
+- **Benchmarks:** `^NSEI` (NIFTY 50), `^GSPC` (S&P 500), `^BSESN` (BSE Sensex)
+- **Outputs:** `correlation` (Pearson coefficient), `beta`, `r_squared`, rolling 30-day correlation
+- **Interpretation:** correlation > 0.7 = high, 0.4-0.7 = moderate, < 0.4 = low
+- **Beta:** > 1 = more volatile than benchmark, < 1 = less volatile
+- **Use cases:** Portfolio construction ("add low-correlation stocks for diversification"), risk assessment
+
+## Using `currency_impact`
+
+- **Purpose:** Shows returns in both INR and USD for Indian stocks
+- **Useful for:** NRIs, foreign investors tracking Indian equities
+- **Outputs:** INR return, USD return, currency impact percentage
+- **Interpretation:** Positive currency impact = rupee weakened (helped USD returns), negative = rupee strengthened
+- **Example:** Stock up 15% in INR but only 8% in USD → rupee strengthened, 7% currency drag
+
+## Using `dividend_calendar`
+
+- **Outputs:** Dividend yield, annual rate, ex-dividend date, recent payment history
+- **Indian stocks:** Quarterly or annual dividends (many only announce annually)
+- **US stocks:** Typically quarterly dividends with announced ex-dates
+- **Use cases:** Income investing, ex-dividend capture timing, yield comparison
 
 ## Gotchas
 

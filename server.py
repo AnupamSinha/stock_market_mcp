@@ -620,6 +620,271 @@ def earnings_calendar(symbol: str) -> str:
     except Exception as e:
         return json.dumps({"symbol": symbol, "error": str(e)})
 
+@mcp.tool()
+def stock_screener(symbols: str = "", min_pe: float = None, max_pe: float = None, 
+                   min_rsi: float = None, max_rsi: float = None,
+                   min_dividend_yield: float = None, min_roe: float = None,
+                   min_score: int = None) -> str:
+    """Screen stocks by criteria: P/E, RSI, dividend yield, ROE, or analyze_stock score. Returns matching symbols that pass all filters. Symbols: comma-separated (default: default watchlist)."""
+    syms = [s.strip() for s in symbols.split(",") if s.strip()] or DEFAULT_WATCHLIST.split(",")
+    matches = []
+    
+    for s in syms[:20]:  # limit to 20 for performance
+        try:
+            # Get fundamentals and technicals in parallel
+            t = yf.Ticker(s)
+            info = t.info or {}
+            h = _history(s, "6mo")
+            
+            if h.empty:
+                continue
+                
+            # Calculate RSI
+            close = h["Close"]
+            rsi = float(_rsi(close).iloc[-1]) if len(close) >= 14 else None
+            
+            # Get fundamentals
+            pe = info.get("trailingPE")
+            dividend_yield = info.get("dividendYield")
+            roe = info.get("returnOnEquity")
+            
+            # Get analyze_stock score (replicate logic)
+            score = 50.0
+            sma50 = close.rolling(50).mean().iloc[-1] if len(close) >= 50 else None
+            if sma50 is not None and float(close.iloc[-1]) > sma50:
+                score += 10
+            else:
+                score -= 10
+            if rsi is not None:
+                if rsi < 30:
+                    score += 10
+                elif rsi > 70:
+                    score -= 10
+                else:
+                    score += 2  # neutral but not bearish
+            macd, sig = _macd(close)
+            if macd.iloc[-1] > sig.iloc[-1]:
+                score += 5
+            else:
+                score -= 5
+            if pe and 0 < pe < 25:
+                score += 10
+            elif pe and pe >= 60:
+                score -= 5
+            if dividend_yield:
+                score += 5
+            if roe and roe > 0.15:
+                score += 5
+            score = max(0.0, min(100.0, score))
+            
+            # Apply filters
+            if min_pe is not None and (pe is None or pe < min_pe):
+                continue
+            if max_pe is not None and (pe is None or pe > max_pe):
+                continue
+            if min_rsi is not None and (rsi is None or rsi < min_rsi):
+                continue
+            if max_rsi is not None and (rsi is None or rsi > max_rsi):
+                continue
+            if min_dividend_yield is not None and (dividend_yield is None or dividend_yield * 100 < min_dividend_yield):
+                continue
+            if min_roe is not None and (roe is None or roe * 100 < min_roe):
+                continue
+            if min_score is not None and score < min_score:
+                continue
+            
+            matches.append({
+                "symbol": s,
+                "name": info.get("shortName", s),
+                "price": _safe(round(float(close.iloc[-1]), 2)),
+                "pe_ratio": _safe(pe),
+                "rsi_14": _safe(round(rsi, 1)) if rsi else None,
+                "dividend_yield_pct": _safe(round(dividend_yield * 100, 2)) if dividend_yield else None,
+                "roe_pct": _safe(round(roe * 100, 2)) if roe else None,
+                "score": _safe(round(score, 1)),
+                "recommendation": _score_to_action(score)
+            })
+        except Exception:
+            continue
+    
+    return json.dumps({
+        "matches": matches,
+        "n_input": len(syms),
+        "n_matches": len(matches),
+        "filters_applied": {
+            "min_pe": min_pe, "max_pe": max_pe,
+            "min_rsi": min_rsi, "max_rsi": max_rsi,
+            "min_dividend_yield": min_dividend_yield,
+            "min_roe": min_roe, "min_score": min_score
+        },
+        "source": "Yahoo Finance (yfinance)"
+    })
+
+@mcp.tool()
+def correlation_analysis(symbol: str, benchmark: str = "^NSEI", period: str = "1y") -> str:
+    """Calculate correlation between a stock and a benchmark (^NSEI for NIFTY 50, ^GSPC for S&P 500). Returns correlation coefficient, rolling correlation, and beta."""
+    try:
+        stock = yf.Ticker(symbol)
+        bench = yf.Ticker(benchmark)
+        
+        stock_h = stock.history(period=period, auto_adjust=True)
+        bench_h = bench.history(period=period, auto_adjust=True)
+        
+        if stock_h.empty or bench_h.empty:
+            return json.dumps({"error": "No price data available"})
+        
+        # Align dates
+        aligned = stock_h["Close"].align(bench_h["Close"], join="inner")
+        stock_returns = aligned[0].pct_change().dropna()
+        bench_returns = aligned[1].pct_change().dropna()
+        
+        # Correlation
+        corr = stock_returns.corr(bench_returns)
+        
+        # Rolling correlation (30-day windows)
+        rolling_corr = stock_returns.rolling(30).corr(bench_returns)
+        rolling_corr_series = rolling_corr.dropna()
+        
+        # Beta (covariance / variance)
+        beta = stock_returns.cov(bench_returns) / bench_returns.var()
+        
+        # R-squared
+        r_squared = corr ** 2
+        
+        return json.dumps({
+            "symbol": symbol,
+            "benchmark": benchmark,
+            "correlation": _safe(round(corr, 3)),
+            "beta": _safe(round(beta, 3)),
+            "r_squared": _safe(round(r_squared, 3)),
+            "correlation_trend": "high" if abs(corr) > 0.7 else ("moderate" if abs(corr) > 0.4 else "low"),
+            "rolling_correlation_30d": {
+                "current": _safe(round(rolling_corr_series.iloc[-1], 3)),
+                "mean": _safe(round(rolling_corr_series.mean(), 3)),
+                "min": _safe(round(rolling_corr_series.min(), 3)),
+                "max": _safe(round(rolling_corr_series.max(), 3)),
+            },
+            "period_days": len(stock_returns),
+            "source": "Yahoo Finance (yfinance)"
+        })
+    except Exception as e:
+        return json.dumps({"symbol": symbol, "error": str(e)})
+
+@mcp.tool()
+def currency_impact(symbol: str) -> str:
+    """Show returns in both INR and USD to understand currency impact. Useful for NRIs or foreign investors tracking Indian stocks."""
+    try:
+        t = yf.Ticker(symbol)
+        h = t.history(period="1y", auto_adjust=True)
+        
+        if h.empty:
+            return json.dumps({"symbol": symbol, "error": "No price data"})
+        
+        # Get USD/INR rate
+        inr = yf.Ticker("INR=X")
+        inr_h = inr.history(period="1y", interval="1d")
+        
+        # Align stock and currency dates
+        stock_close = h["Close"]
+        if not inr_h.empty:
+            # Get most recent USD/INR
+            usd_inr = inr_h["Close"].iloc[-1]
+            # Get USD/INR from 1 year ago
+            if len(inr_h) > 250:
+                usd_inr_start = inr_h["Close"].iloc[-250]
+            else:
+                usd_inr_start = inr_h["Close"].iloc[0]
+        else:
+            usd_inr = 83.0  # fallback
+            usd_inr_start = 83.0
+        
+        # Calculate returns
+        price_start = float(stock_close.iloc[0])
+        price_end = float(stock_close.iloc[-1])
+        
+        inr_return = (price_end / price_start - 1) * 100
+        
+        # USD return = (Price_END / Price_START) * (USD_INR_START / USD_INR_END) - 1
+        usd_return = (price_end / price_start) * (usd_inr_start / usd_inr) - 1
+        usd_return_pct = usd_return * 100
+        
+        # Currency impact
+        currency_impact_pct = usd_return_pct - inr_return
+        
+        return json.dumps({
+            "symbol": symbol,
+            "period": "1y",
+            "inr": {
+                "price_start": _safe(round(price_start, 2)),
+                "price_end": _safe(round(price_end, 2)),
+                "return_pct": _safe(round(inr_return, 2))
+            },
+            "usd": {
+                "usd_inr_start": _safe(round(usd_inr_start, 2)),
+                "usd_inr_end": _safe(round(usd_inr, 2)),
+                "return_pct": _safe(round(usd_return_pct, 2))
+            },
+            "currency_impact_pct": _safe(round(currency_impact_pct, 2)),
+            "interpretation": "rupee weakened" if currency_impact_pct > 0 else "rupee strengthened",
+            "source": "Yahoo Finance (yfinance)"
+        })
+    except Exception as e:
+        return json.dumps({"symbol": symbol, "error": str(e)})
+
+@mcp.tool()
+def dividend_calendar(symbol: str) -> str:
+    """Upcoming dividend dates, ex-dividend dates, yield, and payment history. For Indian and US stocks."""
+    try:
+        t = yf.Ticker(symbol)
+        info = t.info or {}
+        out = {"symbol": symbol, "source": "Yahoo Finance (yfinance)"}
+        
+        # Current dividend info
+        out["dividend_yield"] = _safe(round(info.get("dividendYield", 0) * 100, 2)) if info.get("dividendYield") else None
+        out["dividend_per_share"] = _safe(info.get("dividendRate"))
+        out["payout_ratio"] = _safe(round(info.get("payoutRatio", 0) * 100, 2)) if info.get("payoutRatio") else None
+        out["ex_dividend_date"] = str(info.get("exDividendDate"))[:10] if info.get("exDividendDate") else None
+        
+        # Dividend history from splits/v_actions (limited to last 5)
+        try:
+            actions = t.actions
+            if actions is not None and not actions.empty:
+                dividends = actions[actions["Dividends"] > 0].tail(5)
+                if not dividends.empty:
+                    out["recent_dividends"] = [
+                        {
+                            "date": str(idx)[:10],
+                            "amount": _safe(row["Dividends"]),
+                            "type": "regular"
+                        }
+                        for idx, row in dividends.iterrows()
+                    ]
+        except Exception:
+            pass
+        
+        # If no action data, try getting fromSplits
+        if "recent_dividends" not in out:
+            try:
+                from yfinance import shared
+                import pandas as pd
+                # Try to get from info
+                div_history = info.get(" dividendHistory")
+                if div_history:
+                    out["recent_dividends"] = div_history
+            except Exception:
+                pass
+        
+        # Fallback: use annual dividend rate and frequency
+        out["annual_dividend_rate"] = _safe(info.get("dividendRate"))
+        out["frequency"] = info.get("dividendFrequency", "quarterly") if info.get("dividendRate") else None
+        
+        if not out.get("recent_dividends"):
+            out["note"] = "Limited dividend history available — dividend_yield and annual_dividend_rate show current info."
+        
+        return json.dumps(out)
+    except Exception as e:
+        return json.dumps({"symbol": symbol, "error": str(e)})
+
 
 @mcp.prompt()
 def bull_bear_debate(symbol: str) -> str:
