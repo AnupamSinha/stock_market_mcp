@@ -202,13 +202,28 @@ Expected output: the 8 tool names and a ranked list with scores and recommendati
 
 ```
 stock_market_mcp/
-├── server.py                 # The MCP server (FastMCP, stdio transport)
+├── server.py                 # Thin entrypoint: imports modules, runs the server
+├── app.py                    # Shared FastMCP instance
+├── config.py                 # Env/config constants (.env loader)
+├── utils/helpers.py          # Shared helpers (_safe, RSI, MACD, Alpha Vantage)
+├── tools/                    # Tool modules (one @mcp.tool per function)
+│   ├── core.py               # get_quote, search_symbol, technical_analysis, alpha_vantage_overview
+│   ├── analysis.py           # analyze_stock, analyze_watchlist, compare_stocks
+│   ├── market.py             # market_movers, stock_news, earnings_calendar
+│   ├── screening.py          # stock_screener, correlation_analysis
+│   ├── fundamentals.py       # currency_impact, dividend_calendar
+│   ├── derivatives.py        # options_data
+│   ├── classification.py     # sector_mapping
+│   ├── flows.py              # fii_dii_flows
+│   └── journal.py            # log_decision, review_decisions, analyst_reports
+├── prompts/debate.py         # bull_bear_debate prompt
 ├── backtest.py               # Backtest harness for the scoring rules (5y NSE, monthly)
-├── requirements.txt          # mcp, yfinance
+├── e2e_test.py               # End-to-end MCP test of all tools + prompt
+├── requirements.txt          # mcp, yfinance, bsedata
 ├── .env                      # Optional: ALPHA_VANTAGE_API_KEY (never committed)
-├── decision_journal.json     # Journal fallback when MongoDB is down (never committed)
-├── .gitignore
-└── README.md
+├── .zcode/skills/            # SKILL.md — LLM usage guide
+├── wiki/                     # Wiki pages (also published to the GitHub wiki)
+└── .gitignore
 ```
 
 ## Backtesting
