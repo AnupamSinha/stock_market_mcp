@@ -1,6 +1,6 @@
 # Tools Reference
 
-12 tools + 1 prompt. All analysis defaults to the Indian market (NSE `.NS` / BSE `.BO`); US tickers also work.
+This project exposes **20 MCP tools + 1 prompt**. Most workflows default to Indian market conventions (NSE `.NS` and BSE `.BO`), but US tickers also work.
 
 ## Symbol formats
 
@@ -8,68 +8,103 @@
 |---|---|---|
 | NSE (India) | `<SYMBOL>.NS` | `RELIANCE.NS`, `TCS.NS` |
 | BSE (India) | `<CODE>.BO` | `500325.BO` |
-| US | plain ticker | `AAPL` |
+| US | plain ticker | `AAPL`, `MSFT` |
+
+## Core market tools
+
+### `get_quote(symbol)`
+Returns current price, previous close, and change percentage.
+
+### `search_symbol(query, limit=8)`
+Resolves company names or partial queries to tradeable symbols. Results are sorted India-first (`.NS`, then `.BO`, then other exchanges).
+
+### `technical_analysis(symbol, period="6mo")`
+Returns SMA 20/50/200, RSI-14, MACD, MACD signal, 52-week high/low, and daily volatility.
+
+### `market_movers(market="india")`
+Returns NSE/BSE gainers and losers plus the market index. It uses public exchange data with caching and graceful degradation.
+
+### `stock_news(symbol, limit=5)`
+Returns recent news headlines with publisher and link information.
+
+### `earnings_calendar(symbol)`
+Returns next earnings date, days until, EPS estimate, and recent EPS history / surprise percentages.
+
+### `alpha_vantage_overview(symbol)`
+Optional Alpha Vantage company overview. Requires `ALPHA_VANTAGE_API_KEY` and is most useful for US tickers; Indian symbols usually return empty data.
 
 ## Analysis tools
 
-### `get_quote(symbol)`
-Current price, previous close, day change %.
-
-### `search_symbol(query, limit=8)`
-Resolve a company name or partial symbol to tradeable symbols — "reliance" → RELIANCE.NS,
-"tata consultancy" → TCS.NS. India-first ranking (NSE `.NS` before BSE `.BO` before others).
-Idea credited to 0xramm/Indian-Stock-Market-API, implemented locally over Yahoo's own
-search so there's no third-party dependency.
-
-### `technical_analysis(symbol, period="6mo")`
-SMA 20/50/200, RSI-14, MACD + signal + trend, 52-week high/low, daily volatility.
-
-### `analyze_stock(symbol)` — the core tool
-Technical + fundamental scoring → 0–100 score, **BUY (≥60) / HOLD / SELL (≤20)**, plain-English reasons, fundamentals block, and a **`data_snapshot`** (every input value, timestamped, with source — the audit trail).
+### `analyze_stock(symbol)`
+The core scorecard. Combines technical and fundamental inputs, returns a `score` from 0–100, a recommendation, reasons, and a `data_snapshot` containing the underlying values used to compute the score.
 
 ### `analyze_watchlist(symbols="")`
-Ranks up to 15 comma-separated symbols by score. Empty → default NSE large caps
-(RELIANCE, TCS, INFY, HDFCBANK, ITC, SBIN).
+Ranks a comma-separated list of symbols by score. Defaults to a large-cap India watchlist when no symbols are supplied.
 
 ### `compare_stocks(symbols)`
-Side-by-side P/E, market cap, profit margin, ROE, debt/equity, dividend yield, 1-year return.
+Compares several symbols side by side on P/E, market cap, profit margin, ROE, debt/equity, dividend yield, and 1-year return.
 
-### `market_movers(market="india")`
-Index snapshot — India (NIFTY 50) or US (S&P 500), with suggested next steps.
+### `stock_screener(symbols="", min_pe=None, max_pe=None, min_rsi=None, max_rsi=None, min_dividend_yield=None, min_roe=None, min_score=None)`
+Filters a list of candidate symbols against valuation and momentum thresholds.
 
-### `stock_news(symbol, limit=5)`
-Recent headlines (title/publisher/link). Headlines only — tone judgment is left to the client LLM.
+### `correlation_analysis(symbol, benchmark="^NSEI", period="1y")`
+Computes correlation, beta, r-squared, and 30-day rolling correlation relative to a benchmark index.
 
-### `alpha_vantage_overview(symbol)`
-Optional Alpha Vantage company overview. Needs `ALPHA_VANTAGE_API_KEY`. US symbols only (see [[APIs-and-Data-Sources]]).
+## Fundamentals and context tools
 
-## Decision journal
+### `currency_impact(symbol)`
+Shows INR vs USD returns for Indian equities and the net currency contribution.
 
-### `log_decision(symbol, action, rationale, score)`
-Records a BUY/HOLD/SELL decision with the price at decision time. Stored in MongoDB
-(`stock_data.decision_journal`) or `decision_journal.json` if MongoDB is unreachable.
+### `dividend_calendar(symbol)`
+Returns dividend yield, annual rate, payout ratio, ex-dividend date, and recent payout history.
+
+### `options_data(symbol)`
+Fetches the options chain and returns IV, put/call ratios, ATM contracts, and sentiment signals when available.
+
+### `sector_mapping(symbol)`
+Returns sector, industry, peer tickers, company summary, beta, and key financial metrics.
+
+### `fii_dii_flows(symbol="", period="1m")`
+Shows institutional holders, mutual-fund holders, and insider activity for a symbol where Yahoo Finance provides it. Market-wide FII/DII flows require a paid NSE API and are not available here.
+
+## Decision journal and workflow
+
+### `log_decision(symbol, action, rationale="", score=None)`
+Records a BUY/HOLD/SELL decision in MongoDB (`stock_data.decision_journal`) or a local JSON fallback file when MongoDB is unavailable.
 
 ### `review_decisions(symbol="")`
-Prices every open decision, computes return since decision, and verdicts:
-BUY → CORRECT (>+1%) / WRONG (<-1%) / NEUTRAL; SELL → inverse; HOLD → NEUTRAL while within ±5%,
-BROKEN beyond. See [[Decision-Journal]].
-
-## Workflow
+Evaluates open decisions against current prices and classifies them as CORRECT, WRONG, NEUTRAL, or BROKEN depending on the action and return since the decision date.
 
 ### `analyst_reports(symbol)`
-Three independent, timestamped reports: **fundamentals**, **technical**, **sentiment** (headlines).
-The input for the debate prompt.
+Generates three separate reports: fundamentals, technicals, and sentiment/news headlines.
 
 ### Prompt: `bull_bear_debate(symbol)`
-TradingAgents-inspired workflow the client LLM executes:
-gather reports → bull case → bear case → risk check (falsification conditions, sizing, upcoming events)
-→ decision with score + confidence + horizon → `log_decision` automatically.
-Grounding rule: every claim must trace to the snapshot or a fresh tool call.
+A TradingAgents-style workflow that asks the client model to:
 
-## Scoring model (current, beta)
+1. Gather the `analyst_reports` output for the symbol
+2. Build the bull case from the snapshot data only
+3. Build the bear case from the snapshot data only
+4. Check the risk and falsification conditions
+5. Make a decision with a score, confidence, and time horizon
+6. Call `log_decision` with the final rationale
 
-Starts neutral at 50; adjustments: price vs 50-day SMA ±10, vs 200-day SMA ±10,
-RSI <30 +10 / >70 −10, MACD crossover ±5, positive 6-month return +5,
-P/E <25 +10 / ≥60 −5, debt-to-equity <100 +5 else −5, profit margin >10% +5, dividend yield +5.
+## How the score is computed
 
-⚠️ See [[Backtesting]]: these weights are conventions, not yet fully evidence-tuned.
+The current score starts from 50 and adds or subtracts points based on:
+
+- price vs 50-day and 200-day SMA
+- RSI-14 oversold/overbought conditions
+- MACD relative to signal line
+- 6-month return
+- P/E versus valuation thresholds
+- debt/equity and leverage
+- profit margin
+- dividend yield
+
+The exact weights are still a practical heuristic rather than a fully proven model. See [[Backtesting]] for the current evidence and caveats.
+
+## Grounding and audit rules
+
+The server is designed around “verified data first.” For example, `analyze_stock` and `analyst_reports` attach a `data_snapshot` that includes the values used to compute the recommendation and the source of each figure.
+
+This keeps the model honest: the reasoning layer must cite fresh tool output, not memory.

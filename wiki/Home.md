@@ -2,46 +2,47 @@
 
 > **FoodForBrains** · *Feeding your brain the data it needs to decide.*
 
-Welcome to the official wiki for **stock_market_mcp** — FoodForBrains' lightweight, India-focused (NSE/BSE) stock-analysis MCP server that returns scored **BUY / HOLD / SELL** assessments from live market data.
+Welcome to the official wiki for **stock_market_mcp**. This project is a lightweight MCP server for stock research, ranking, and screening across the Indian market and major US tickers.
+
+It exposes a verified-data layer for AI clients: every quote, indicator, and recommendation is grounded in source data rather than memory. The server is intentionally simple and thin; the client remains responsible for higher-level reasoning.
 
 ## Quick start
 
 ```bash
 git clone https://github.com/AnupamSinha/stock_market_mcp.git
-cd stock_market_mcp && pip install -r requirements.txt
-python3 server.py   # launched automatically by your MCP client
+cd stock_market_mcp
+pip install -r requirements.txt
+python3 server.py   # typically launched by your MCP client
 ```
 
-Full walkthrough: [[Setup-and-Installation]]
+Full setup: [[Setup-and-Installation]]
 
-## Pages
+## What is included
+
+- **20 tools + 1 prompt** for quotes, technicals, screening, comparison, sector context, journal logging, and structured debate
+- **India-first defaults** for NSE/BSE symbols, but US tickers also work
+- **Grounded snapshots** so numbers can be traced to the source data
+- **Zero mandatory API keys** for core analysis; Alpha Vantage is optional
+- **Journal grading loop** to compare decisions against current prices
+
+## Wiki pages
 
 | Page | Contents |
 |---|---|
-| [[Setup-and-Installation]] | Prerequisites, install, client configuration (ZCode / Claude Desktop) |
-| [[Tools-Reference]] | All 12 tools + 1 prompt, parameters, scoring model |
-| [[Architecture]] | How the server is built; data flow; design decisions |
-| [[APIs-and-Data-Sources]] | Yahoo Finance, Alpha Vantage, MongoDB — limits and gotchas |
-| [[Decision-Journal]] | Logging decisions, reviewing outcomes, JSON fallback |
-| [[Backtesting]] | The harness, methodology, current findings |
-| [[TradingAgents-Inspiration]] | What we borrowed from TauricResearch/TradingAgents and why |
-| [[Troubleshooting]] | Common errors and fixes |
+| [[Setup-and-Installation]] | Prerequisites, install, env vars, MCP client configuration |
+| [[Tools-Reference]] | Tool catalog for all 20 MCP tools and the `bull_bear_debate` prompt |
+| [[Architecture]] | Server design, module map, data flow, and grounding model |
+| [[APIs-and-Data-Sources]] | Yahoo Finance, NSE/BSE sources, Alpha Vantage, MongoDB, and limits |
+| [[Decision-Journal]] | Logging calls, reviewing them against prices, fallback behavior |
+| [[Backtesting]] | The scoring-model harness and current findings |
+| [[TradingAgents-Inspiration]] | Why the workflow borrows from TradingAgents and how this server adapts it |
+| [[Troubleshooting]] | Common setup and runtime issues |
 | [[FAQ]] | Frequently asked questions |
-
-## What it gives you
-
-- **12 tools + 1 prompt** — quotes, technicals (SMA/RSI/MACD), full scored analysis with auditable data snapshots, watchlist ranking, comparisons, news, and a TradingAgents-style bull/bear debate workflow
-- **Decision journal** — every recommendation logged and later graded CORRECT/WRONG against real prices
-- **Backtest harness** — the scoring rules replayed over 5 years of NSE history, honestly reported
-- **Zero mandatory API keys** — Yahoo Finance powers everything; Alpha Vantage is optional
 
 ## About FoodForBrains
 
-FoodForBrains builds tools that make market information digestible — analysis
-you can actually reason about, with every number traceable to its source.
-This project is part of that mission: grounded data in, transparent reasoning
-out.
+FoodForBrains builds tools that make market information digestible. This project follows that principle: grounded data in, transparent reasoning out.
 
 ## Disclaimer
 
-All content and tool output is **educational analysis generated from public market data — not financial advice**. BUY/HOLD/SELL scores are a screening aid, not a recommendation to trade. Invest responsibly — your brain deserves the whole meal. 🧠
+All content and tool output is educational analysis generated from public market data, not financial advice. BUY/HOLD/SELL scores are screening aids, not trade recommendations.
